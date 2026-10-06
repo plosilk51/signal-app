@@ -359,8 +359,21 @@ function renderEnd() {
     el("p", null, `You went through all ${list.length} of today's stories and opened ${openedToday}.`),
     el("p", "strong", "Tomorrow's feed lands at 06:00."),
   );
+  const top = el("button", "pill", "Back to the top");
+  top.type = "button";
+  top.addEventListener("click", backToStart);
+  words.append(top);
   screen.append(el("div", "sun"), words);
   return screen;
+}
+
+// Jump back to story 1 (from the end screen's button, or by tapping "Story 12 of 75").
+function backToStart() {
+  if (index === 0) return;
+  index = 0;
+  rememberPlace();
+  layout();
+  toast("Back to story 1");
 }
 
 // What goes on a given position: a story, the end screen, or nothing.
@@ -597,7 +610,12 @@ function buildPage() {
   row.append(buttons);
   const bar = el("div", "bar");
   bar.append(el("div"));
-  header.append(row, bar, el("div", "count"));
+  // The "Story 12 of 75" counter is a button: tapping it goes back to story 1.
+  const count = el("button", "count");
+  count.type = "button";
+  count.setAttribute("aria-label", "Back to the first story");
+  count.addEventListener("click", backToStart);
+  header.append(row, bar, count);
 
   const toastBox = el("div", "toast");
   toastBox.id = "toast";

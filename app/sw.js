@@ -6,7 +6,7 @@
 //     so the app still opens with the last feed rather than a blank screen.
 // Photos from news sites aren't stored (they're large and belong to other sites).
 
-const CACHE = "signal-v1";            // change this name to throw away old copies
+const CACHE = "signal-v2";            // change this name to throw away old copies
 const NETWORK_TIMEOUT_MS = 4000;
 
 // Stored as soon as the helper is installed, so the app can open offline.
@@ -52,7 +52,10 @@ self.addEventListener("fetch", event => {
     // The app asks for "feed.json" fresh each time; store and look it up without that detail.
     const key = ours ? url.origin + url.pathname : event.request;
     try {
-      const response = await fetchWithTimeout(event.request);
+      // For our own files, always check with the server whether they changed
+      // ("no-cache"), so app updates show up the next time Signal opens.
+      const request = ours ? new Request(event.request, { cache: "no-cache" }) : event.request;
+      const response = await fetchWithTimeout(request);
       if (response.ok) cache.put(key, response.clone());
       return response;
     } catch (problem) {
