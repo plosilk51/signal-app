@@ -1,0 +1,70 @@
+# Publishes a copy of the Signal app on GitHub Pages: https://plosilk51.github.io/signal-app/
+#
+# Why: some mobile carriers block *.workers.dev addresses, where Signal is hosted.
+# github.io addresses aren't blocked. This repository (public) holds ONLY a copy of
+# the app's public files; the code stays in the private "signal" repository.
+#
+# Every hour it downloads the app and today's feed from the Cloudflare address
+# (GitHub's servers can reach it) and publishes them here. No passwords or tokens.
+
+name: Publish Signal
+
+on:
+  schedule:
+    - cron: "45 * * * *"     # every hour at minute 45 (the morning feed is ready by ~01:30 UTC)
+  workflow_dispatch:          # a "Run workflow" button, for testing
+
+permissions:
+  contents: write             # to save the copy (keeps the repository active)
+  pages: write                # to publish on GitHub Pages
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
+      - name: Get this repository
+        uses: actions/checkout@v5
+
+      - name: Download the app from Cloudflare
+        run: |
+          base="https://signal.plosilk51.workers.dev"
+          mkdir -p app/icons
+          for file in index.html style.css app.js sw.js manifest.json feed.json \
+                      icons/apple-touch-icon.png icons/icon-192.png icons/icon-512.png \
+                      icons/icon-maskable-512.png icons/favicon-32.png; do
+            curl --fail --silent --show-error --retry 3 "$base/$file" -o "app/$file"
+          done
+
+      # Saving the copy when it changed (about once a day) keeps the repository
+      # "active": GitHub pauses scheduled jobs in public repositories that see no
+      # activity for 60 days.
+      - name: Save the copy if it changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app
+          if git diff --cached --quiet; then
+            echo "No changes."
+          else
+            git commit -m "Update app copy $(date -u +%F)"
+            git push
+          fi
+
+      - name: Prepare for GitHub Pages
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: app
+
+      - name: Publish on GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
