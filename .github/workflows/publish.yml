@@ -39,11 +39,15 @@ jobs:
         run: |
           base="https://signal.plosilk51.workers.dev"
           mkdir -p app/icons
-          for file in index.html style.css app.js sw.js manifest.json feed.json \
+          # Cloudflare serves the main page at "/" (it redirects /index.html there).
+          curl --fail --silent --show-error --location --retry 3 "$base/" -o app/index.html
+          for file in style.css app.js sw.js manifest.json feed.json \
                       icons/apple-touch-icon.png icons/icon-192.png icons/icon-512.png \
                       icons/icon-maskable-512.png icons/favicon-32.png; do
-            curl --fail --silent --show-error --retry 3 "$base/$file" -o "app/$file"
+            curl --fail --silent --show-error --location --retry 3 "$base/$file" -o "app/$file"
           done
+          # Stop if the main page came back empty, rather than publishing a blank app.
+          grep -q "<title>Signal</title>" app/index.html
 
       # Saving the copy when it changed (about once a day) keeps the repository
       # "active": GitHub pauses scheduled jobs in public repositories that see no
