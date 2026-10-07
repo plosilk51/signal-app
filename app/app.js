@@ -31,6 +31,7 @@ function freshState() {
     topics: Object.fromEntries(TOPICS.map(t => [t, TOPICS_ON_AT_START.includes(t)])),
     bubble: true,
     keywords: [],
+    name: "",           // shown in the greeting ("Good morning, Ben"); empty = no name
     swipe: "cards",      // "cards" (sideways, Tinder) or "reels" (up and down)
     opened: {},
     saved: {},
@@ -136,7 +137,9 @@ function alreadySeen(story) {
 function buildList(total) {
   const isOn = story => story.topics.some(t => state.topics[t]);
   const byScore = (a, b) => finalScore(b) - finalScore(a);
-  const usable = feed.stories.filter(s => !alreadySeen(s));
+  // Today's top stories are on the home page, so the feed leaves them out.
+  const top = new Set(topStories().map(s => s.id));
+  const usable = feed.stories.filter(s => !alreadySeen(s) && !top.has(s.id));
   const yours = usable.filter(isOn).sort(byScore);
   const outside = state.bubble ? usable.filter(s => !isOn(s)).sort(byScore) : [];
 
@@ -214,6 +217,8 @@ function refreshCurrent() {
   // A topic's story list that's open shows "✓ Opened" too.
   const listSheet = document.getElementById("story-list-sheet");
   if (listSheet && !listSheet.hidden) renderStoryList();
+  const card = document.getElementById("top-story-sheet");
+  if (card && !card.hidden) renderTopStoryCard();
 }
 
 let toastTimer;
@@ -523,7 +528,7 @@ function listenForSwipes() {
 
   // For testing on a computer: arrow keys and the mouse wheel.
   document.addEventListener("keydown", event => {
-    if (document.querySelector(".sheet:not([hidden])")) return;
+    if (document.querySelector(".sheet:not([hidden])") || !homeHidden()) return;
     if (event.key === "ArrowRight" || event.key === "ArrowDown") { event.preventDefault(); go(1); }
     if (event.key === "ArrowLeft" || event.key === "ArrowUp") { event.preventDefault(); go(-1); }
   });
@@ -542,7 +547,7 @@ function listenForSwipes() {
 
 // ---------- the page around the deck ----------
 
-function buildPage() {
+function buildPage(home) {
   const app = document.getElementById("app");
   deck = el("div", "deck");
   slots = { previous: el("div", "slot"), current: el("div", "slot"), next: el("div", "slot") };
@@ -554,7 +559,7 @@ function buildPage() {
   const buttons = el("div", "header-buttons");
   const actions = { start: backToStart, deep: openDeep, saved: openSaved, topics: openTopics };
   for (const [name, label] of [["start", "Back to the first story"], ["deep", "Deep Signal"],
-                               ["saved", "Saved stories"], ["topics", "Topics"]]) {
+                               ["saved", "Saved stories"], ["topics", "Settings"]]) {
     const button = el("button", "icon-button");
     button.type = "button";
     button.id = name + "-button";
@@ -572,7 +577,8 @@ function buildPage() {
   toastBox.id = "toast";
   toastBox.setAttribute("role", "status");   // screen readers announce the message
 
-  app.replaceChildren(deck, header, buildSavedSheet(), buildTopicsSheet(), buildStoryListSheet(), buildDeepSheet(), toastBox);
+  app.replaceChildren(deck, header, home, buildSavedSheet(), buildTopicsSheet(), buildStoryListSheet(),
+                     buildDeepSheet(), buildTopStorySheet(), toastBox);
   updateDeepButton();
 }
 
@@ -697,7 +703,7 @@ function openSaved() {
 // Android's Back button or back gesture - removes one step and closes the screen
 // on top. On the feed itself, Back leaves the app as usual.
 
-const SHEETS_TOP_FIRST = ["story-list-sheet", "saved-sheet", "deep-sheet", "topics-sheet"];
+const SHEETS_TOP_FIRST = ["top-story-sheet", "story-list-sheet", "saved-sheet", "deep-sheet", "topics-sheet"];
 
 function showSheet(sheet) {
   sheet.scrollTop = 0;
@@ -711,9 +717,14 @@ function goBack() {
 
 function closeTopSheet() {
   const id = SHEETS_TOP_FIRST.find(id => !document.getElementById(id).hidden);
-  if (!id) return;
+  if (!id) {
+    if (homeHidden()) showHome();   // Back from the feed: to the home page
+    return;
+  }
   document.getElementById(id).hidden = true;
   if (id === "topics-sheet") applyTopicChanges();
+  // Back on the home page: refresh it (a story may now be "Opened", the streak may have grown).
+  if (!homeHidden()) fillHome();
 }
 
 window.addEventListener("popstate", closeTopSheet);
@@ -792,7 +803,7 @@ function buildTopicsSheet() {
   }
   swipeBox.append(choices);
 
-  sheet.append(sheetHeader("Topics"), el("div", "topic-list"), keywordBox, swipeBox);
+  sheet.append(sheetHeader("Settings"), nameBox(), el("div", "topic-list"), keywordBox, swipeBox);
   return sheet;
 }
 
@@ -924,7 +935,7 @@ function buildStoryListSheet() {
   const sheet = el("section", "sheet above");
   sheet.id = "story-list-sheet";
   sheet.hidden = true;
-  sheet.append(sheetHeader("", "Topics"), el("div", "saved-list"));
+  sheet.append(sheetHeader("", "Settings"), el("div", "saved-list"));
   return sheet;
 }
 
@@ -1139,6 +1150,147 @@ function openDeep() {
   showSheet(sheet);
 }
 
+// ---------- the home page ----------
+//
+// Every time Signal opens: a greeting ("Good morning," with your name under it) and
+// the rising red sun. After 2 seconds the sun goes down, the greeting moves up to
+// become the page's heading, and today's top stories slide in, with "Start your
+// feed" and "Deep Signal" under them.
+
+const SPLASH_MS = 2000;
+const TOP_MIN = 5, TOP_MAX = 10, TOP_SCORE = 5;   // top stories: score 5 or more, 5 to 10 of them
+
+// Today's biggest stories, from ALL topics: every story scoring TOP_SCORE or more
+// (about five reliable outlets), at least TOP_MIN and at most TOP_MAX.
+function topStories() {
+  const ranked = feed.stories.slice().sort((a, b) => b.score - a.score);
+  const big = ranked.filter(s => s.score >= TOP_SCORE).length;
+  return ranked.slice(0, Math.min(TOP_MAX, Math.max(TOP_MIN, big)));
+}
+
+function greeting() {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) return "Good morning";
+  if (hour >= 12 && hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+function buildHome() {
+  const home = el("section", "home splash");
+  home.id = "home";
+  const words = el("div", "greeting");
+  const name = state.name.trim();
+  words.append(el("div", "g1", greeting() + (name ? "," : "")));
+  if (name) words.append(el("div", "g2", name));
+  words.append(el("div", "date",
+    new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })));
+  home.append(el("div", "sun"), words, el("div", "home-body"));
+  return home;
+}
+
+function fillHome() {
+  const home = document.getElementById("home");
+  const body = home.querySelector(".home-body");
+  body.replaceChildren(el("h2", "home-title", "Today's top stories"));
+
+  const listBox = el("ol", "top-list");
+  topStories().forEach((story, i) => {
+    const row = el("li");
+    const open = el("button", "top-row");
+    open.type = "button";
+    const words = el("div", "top-words");
+    const meta = el("div", "top-meta");
+    const dots = el("span", "top-dots", "●".repeat(Math.min(5, story.sources.length)));
+    meta.append(dots, el("span", null, sourcesText(story.sources) + " · " + story.topic));
+    if (state.opened[story.id]) meta.append(el("span", null, "· ✓ Opened"));
+    words.append(el("div", "top-headline", story.headline), meta);
+    open.append(el("span", "top-number", String(i + 1)), words);
+    open.addEventListener("click", () => openTopStory(story));
+    row.append(open);
+    listBox.append(row);
+  });
+
+  const start = el("button", "read-button start-feed", "Start your feed");
+  start.type = "button";
+  start.addEventListener("click", enterFeed);
+
+  const deep = el("button", "deep-entry");
+  deep.type = "button";
+  deep.innerHTML = deepDoneToday() ? ICONS.deepDone : ICONS.deep;
+  deep.append(el("span", "deep-entry-name", "Deep Signal"),
+              el("span", "deep-entry-status",
+                 deepDoneToday() ? "Done today ✓" : deepStreak() ? streakText(deepStreak()) : "Start your streak"));
+  deep.addEventListener("click", openDeep);
+
+  body.append(listBox, start, deep);
+}
+
+// Where the greeting sits during the splash: about a third down the screen. It's
+// measured from its place as the page heading, so it can glide up into it.
+function placeGreeting(home) {
+  const words = home.querySelector(".greeting");
+  home.style.setProperty("--splash-shift", Math.round(window.innerHeight * 0.34 - words.offsetTop) + "px");
+}
+
+const homeHidden = () => document.getElementById("home").classList.contains("hidden");
+
+function enterFeed() {
+  document.getElementById("home").classList.add("hidden");
+  history.pushState({ feed: true }, "");   // Android's Back from the feed returns home
+  layout();
+}
+
+function showHome() {
+  fillHome();
+  document.getElementById("home").classList.remove("hidden");
+}
+
+// One top story as a full card: "Read article", Save, and "‹ Top stories".
+let shownTopStory = null;
+
+function buildTopStorySheet() {
+  const sheet = el("section", "sheet above story-sheet");
+  sheet.id = "top-story-sheet";
+  sheet.hidden = true;
+  sheet.setAttribute("aria-label", "Top story");
+  const back = el("button", "back card-back");
+  back.type = "button";
+  back.innerHTML = ICONS.back;
+  back.append("Top stories");
+  back.addEventListener("click", goBack);
+  sheet.append(el("div", "card-holder"), back);
+  return sheet;
+}
+
+function renderTopStoryCard() {
+  const sheet = document.getElementById("top-story-sheet");
+  sheet.querySelector(".card-holder").replaceChildren(renderStory(shownTopStory));
+}
+
+function openTopStory(story) {
+  shownTopStory = story;
+  renderTopStoryCard();
+  showSheet(document.getElementById("top-story-sheet"));
+}
+
+// Settings: "Your name", shown in the greeting. Saved on this phone.
+function nameBox() {
+  const box = el("div", "box name-box");
+  const label = el("label", null, "Your name");
+  label.htmlFor = "name-input";
+  const input = el("input");
+  input.id = "name-input";
+  input.type = "text";
+  input.placeholder = "Ben";
+  input.autocomplete = "given-name";
+  input.enterKeyHint = "done";
+  input.value = state.name;
+  input.addEventListener("input", () => { state.name = input.value.trim(); saveState(); });
+  input.addEventListener("keydown", event => { if (event.key === "Enter") input.blur(); });
+  box.append(label, input, el("p", "note", "Shown in the greeting when you open Signal."));
+  return box;
+}
+
 // ---------- start ----------
 
 async function start() {
@@ -1150,6 +1302,12 @@ async function start() {
   // so Signal opens even without internet (or when a network blocks the address).
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 
+  // The greeting shows straight away, while the feed loads.
+  const home = buildHome();
+  document.getElementById("app").replaceChildren(home);
+  placeGreeting(home);
+  const opened = Date.now();
+
   let offline = false;
   try {
     // cache: "no-cache" = always ask the server whether there's a newer feed.
@@ -1157,14 +1315,20 @@ async function start() {
     offline = response.headers.get("X-Signal-Offline") === "1";
     feed = await response.json();
   } catch (problem) {
-    document.getElementById("app").replaceChildren(
+    home.querySelector(".home-body").replaceChildren(
       el("p", "message", "Couldn't load today's stories. Check your connection and try again."));
+    home.classList.remove("splash");
     return;
   }
   prepareToday();
-  buildPage();
+  buildPage(home);
   layout();
   listenForSwipes();
+  fillHome();
+
+  // Keep the greeting on screen for at least 2 seconds, then reveal the home page.
+  await new Promise(done => setTimeout(done, Math.max(0, SPLASH_MS - (Date.now() - opened))));
+  home.classList.remove("splash");
   if (offline) toast("No connection: showing the feed from " + timeAgo(feed.generated_at).toLowerCase());
 }
 
