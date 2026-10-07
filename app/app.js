@@ -555,7 +555,12 @@ function buildPage(home) {
 
   header = el("header", "top");
   const row = el("div", "row");
-  row.append(el("div", "brand", "Signal"));
+  // Tapping the "Signal" wordmark goes back to the home page (today's top stories).
+  const brand = el("button", "brand", "Signal");
+  brand.type = "button";
+  brand.setAttribute("aria-label", "Signal: back to today's top stories");
+  brand.addEventListener("click", backToHome);
+  row.append(brand);
   const buttons = el("div", "header-buttons");
   const actions = { start: backToStart, deep: openDeep, saved: openSaved, topics: openTopics };
   for (const [name, label] of [["start", "Back to the first story"], ["deep", "Deep Signal"],
@@ -1242,7 +1247,16 @@ function enterFeed() {
 
 function showHome() {
   fillHome();
-  document.getElementById("home").classList.remove("hidden");
+  const home = document.getElementById("home");
+  home.classList.remove("hidden");
+  home.scrollTop = 0;   // start at the top stories
+}
+
+// From the feed back to the home page. Entering the feed added a step to the
+// history, so we go back through it (keeping Android's Back button in step).
+function backToHome() {
+  if (history.state && history.state.feed) goBack();
+  else showHome();
 }
 
 // One top story as a full card: "Read article", Save, and "‹ Top stories".

@@ -70,6 +70,8 @@ header.top {
 }
 header .row { display: flex; justify-content: space-between; align-items: center; }
 .brand {
+  pointer-events: auto;            /* a button: back to the home page */
+  padding: 4px 8px 4px 0; background: none; border: 0; cursor: pointer;
   font-family: var(--font-head);
   font-size: 26px; font-weight: 900; letter-spacing: -0.03em;
 }
