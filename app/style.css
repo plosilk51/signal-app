@@ -63,8 +63,9 @@ button { font: inherit; color: inherit; }
 
 header.top {
   position: absolute; top: 0; left: 0; right: 0; z-index: 5;
-  padding: calc(env(safe-area-inset-top) + 6px) 10px 18px 20px;
-  background: linear-gradient(rgba(27, 32, 39, 0.85), rgba(27, 32, 39, 0));
+  height: calc(env(safe-area-inset-top) + 92px);
+  padding: calc(env(safe-area-inset-top) + 6px) 10px 0 20px;
+  background: var(--bg);           /* solid: the story starts below the header */
   pointer-events: none;            /* swipes pass through, except on the buttons */
 }
 header .row { display: flex; justify-content: space-between; align-items: center; }
@@ -85,12 +86,7 @@ header .row { display: flex; justify-content: space-between; align-items: center
   background: rgba(245, 246, 247, 0.22);
 }
 .bar div { height: 100%; width: 0; background: #C42A21; transition: width 0.3s; }
-.count {
-  pointer-events: auto;            /* the header lets swipes through, but this is a button */
-  display: inline-block; min-height: 28px; padding: 4px 8px 4px 0;
-  background: none; border: 0; cursor: pointer; text-align: left;
-  font-size: 12px; font-weight: 600; color: var(--soft);
-}
+.count { font-size: 12px; font-weight: 600; color: var(--soft); }
 
 /* The "Back to the top" button on the end screen. */
 .pill {
@@ -122,44 +118,37 @@ header .row { display: flex; justify-content: space-between; align-items: center
   border-radius: 50%; background: var(--red);
 }
 
-/* ---------- one story, full screen ---------- */
+/* ---------- one story: framed photo, text, actions ---------- */
 
-.story { position: absolute; inset: 0; overflow: hidden; background: var(--bg); }
-
-.photo {
-  position: absolute; inset: 0;
-  width: 100%; height: 100%;
-  object-fit: cover;               /* fill the screen, cropping the edges */
-  cursor: pointer;
+.story {
+  position: absolute; inset: 0; overflow: hidden; background: var(--bg);
+  display: flex; flex-direction: column;
+  padding: calc(env(safe-area-inset-top) + 96px) 16px calc(env(safe-area-inset-bottom) + 16px);
 }
+
+/* The photo sits in a rounded frame with space around it, like a magazine page. */
+.frame {
+  flex: 0 0 auto;
+  height: clamp(170px, 36vh, 340px);
+  border-radius: 16px; overflow: hidden;
+  background: var(--placeholder);
+}
+.photo { display: block; width: 100%; height: 100%; object-fit: cover; }
 
 /* No photo: dark grey with the topic name in large letters. */
 .photo.none {
-  display: flex; align-items: flex-start; justify-content: flex-start;
-  padding: calc(env(safe-area-inset-top) + 120px) 24px 0;
-  background: var(--placeholder);
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  padding: 0 20px;
   font-family: var(--font-head);
-  font-size: 44px; line-height: 0.95; font-weight: 900; letter-spacing: -0.03em;
+  font-size: 40px; line-height: 0.95; font-weight: 900; letter-spacing: -0.03em;
   color: #3A424D;
   overflow-wrap: anywhere;          /* long topic names wrap instead of running off screen */
 }
 
-/* The dark fade at the bottom that makes the text readable over any photo. */
-.fade {
-  position: absolute; left: 0; right: 0; bottom: 0; height: 70%;
-  pointer-events: none;
-  background: linear-gradient(to bottom,
-    rgba(27, 32, 39, 0) 0%,
-    rgba(27, 32, 39, 0.75) 35%,
-    rgba(27, 32, 39, 0.96) 65%,
-    var(--bg) 100%);
-}
-
 .text {
-  position: absolute;
-  left: 20px; right: 84px;          /* leave room for the rail on the right */
-  bottom: calc(env(safe-area-inset-bottom) + 28px);
-  display: flex; flex-direction: column; gap: 10px;
+  flex: 1 1 auto; min-height: 0; overflow: hidden;
+  padding: 16px 4px 0;
+  display: flex; flex-direction: column; gap: 9px;
 }
 
 .tags { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -170,21 +159,21 @@ header .row { display: flex; justify-content: space-between; align-items: center
 .tag.bubble { background: var(--red); color: var(--ink); }
 .tag.update { background: #D9DDE2; color: var(--bg); }
 
-.meta { display: flex; gap: 10px; font-size: 13px; color: var(--soft); }
+.meta { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 13px; color: var(--soft); }
 .meta .topic { color: var(--ink); font-weight: 700; }
 .meta .opened { display: inline-flex; align-items: center; gap: 4px; }
 
 .headline {
   margin: 0;
   font-family: var(--font-head);
-  font-size: 27px; line-height: 1.15; font-weight: 800; letter-spacing: -0.015em;
-  display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden;
+  font-size: 25px; line-height: 1.15; font-weight: 800; letter-spacing: -0.015em;
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
 }
 
 .summary {
   margin: 0;
   font-size: 15px; line-height: 1.5; color: var(--soft);
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
 
 .coverage { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--soft); }
@@ -195,21 +184,22 @@ header .row { display: flex; justify-content: space-between; align-items: center
 
 .credit { font-size: 12px; color: var(--muted); }
 
-/* ---------- right-side rail: Save and Read ---------- */
+/* ---------- actions: "Read article" and Save ---------- */
 
-.rail {
-  position: absolute; right: 8px;
-  bottom: calc(env(safe-area-inset-bottom) + 130px);
-  display: flex; flex-direction: column; gap: 18px;
+.actions { flex: 0 0 auto; display: flex; gap: 10px; padding-top: 14px; }
+.read-button {
+  flex: 1; height: 52px;
+  border: 0; border-radius: 14px; cursor: pointer;
+  background: var(--red); color: var(--ink);
+  font-size: 16px; font-weight: 700;
 }
-.rail button {
-  width: 64px; min-height: 58px;
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  background: none; border: 0; padding: 4px 0;
-  font-size: 12px; font-weight: 700;
-  cursor: pointer;
-  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
+.save-button {
+  width: 52px; height: 52px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: 1px solid #4A525E; border-radius: 14px; cursor: pointer;
 }
+.save-button svg { width: 24px; height: 24px; }
+.save-button.is-saved { border-color: #C42A21; }
 
 /* ---------- sheets: Saved and Topics screens that cover the feed ---------- */
 

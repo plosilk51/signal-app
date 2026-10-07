@@ -89,6 +89,7 @@ function sourcesText(sources) {
 }
 
 const ICONS = {
+  start: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>',
   // Deep Signal: a rising sun sending out waves. Outline until today's read is done, then red.
   deep: '<svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M7.5 18a4.5 4.5 0 0 1 9 0Z"/><path d="M5.07 14A8 8 0 0 1 18.93 14"/><path d="M2.47 12.5A11 11 0 0 1 21.53 12.5" opacity=".6"/></svg>',
   deepDone: '<svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="#C42A21" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M7.5 18a4.5 4.5 0 0 1 9 0Z" fill="#C42A21"/><path d="M5.07 14A8 8 0 0 1 18.93 14"/><path d="M2.47 12.5A11 11 0 0 1 21.53 12.5" opacity=".6"/></svg>',
@@ -130,30 +131,16 @@ function alreadySeen(story) {
   return openedIn && openedIn !== feed.generated_at && !story.update;
 }
 
-// Pick stories to follow the ones in `kept`, until the list has `total` stories.
-// Your topics come first by score; every 4th position is "Outside your bubble".
-// `mustInclude` lists stories that have to be among the picks (the top stories of a
-// topic you just switched on); they're still placed in score order.
-function buildList(total, kept = [], mustInclude = []) {
-  const keptIds = new Set(kept.map(s => s.id));
+// Pick today's `total` stories: your topics first, by score; every 4th position
+// is "Outside your bubble" (a topic you've switched off), if that's on.
+function buildList(total) {
   const isOn = story => story.topics.some(t => state.topics[t]);
   const byScore = (a, b) => finalScore(b) - finalScore(a);
-  const usable = feed.stories.filter(s => !alreadySeen(s) && !keptIds.has(s.id));
-
-  const mustIds = new Set(mustInclude.map(s => s.id));
-  const rest = usable.filter(s => isOn(s) && !mustIds.has(s.id)).sort(byScore);
-  // How many of the positions ahead are for your topics (the others are bubble turns).
-  let yourSlots = 0;
-  for (let position = kept.length; position < total; position++) {
-    if (!state.bubble || (position + 1) % BUBBLE_EVERY !== 0) yourSlots++;
-  }
-  // Reserve those slots for the must-include stories plus the best of the rest, in
-  // score order. Anything left over is only used if the bubble stories run out.
-  const picked = mustInclude.concat(rest).slice(0, yourSlots).sort(byScore);
-  const yours = picked.concat(rest.filter(s => !picked.includes(s)));
+  const usable = feed.stories.filter(s => !alreadySeen(s));
+  const yours = usable.filter(isOn).sort(byScore);
   const outside = state.bubble ? usable.filter(s => !isOn(s)).sort(byScore) : [];
 
-  const result = kept.slice();
+  const result = [];
   let y = 0, o = 0;
   while (result.length < total && (y < yours.length || o < outside.length)) {
     const bubbleTurn = (result.length + 1) % BUBBLE_EVERY === 0;
@@ -166,8 +153,6 @@ function buildList(total, kept = [], mustInclude = []) {
   return result;
 }
 
-// How many stories today: 75, plus 10 for every topic you switched on during the day.
-let dayTotal = STORIES_PER_DAY;
 
 // Use the list you were already reading today, or make a new one when a new feed arrives.
 function prepareToday() {
@@ -177,37 +162,11 @@ function prepareToday() {
     list = today.ids.map(entry => byId[entry.id] && Object.assign({ bubble: entry.bubble }, byId[entry.id]))
                     .filter(Boolean);
     index = Math.min(today.index, list.length);
-    dayTotal = today.total || STORIES_PER_DAY;
   } else {
-    dayTotal = STORIES_PER_DAY;
-    list = buildList(dayTotal);
+    list = buildList(STORIES_PER_DAY);
     index = 0;
   }
   rememberPlace();
-}
-
-// After changing topics, the bubble switch or keywords: the stories you've gone past
-// and the one on screen stay; only what's ahead is rebuilt.
-const EXTRA_PER_ADDED_TOPIC = 10;
-
-function rebuildAhead(topicsSwitchedOn) {
-  dayTotal += EXTRA_PER_ADDED_TOPIC * topicsSwitchedOn.length;
-  const kept = list.slice(0, Math.min(index + 1, list.length));
-  const keptIds = new Set(kept.map(s => s.id));
-  // The top 10 unseen stories of each topic you just switched on.
-  const mustInclude = [];
-  for (const topic of topicsSwitchedOn) {
-    feed.stories
-      .filter(s => s.topics.includes(topic) && !keptIds.has(s.id) && !alreadySeen(s)
-                   && !mustInclude.includes(s))
-      .sort((a, b) => finalScore(b) - finalScore(a))
-      .slice(0, EXTRA_PER_ADDED_TOPIC)
-      .forEach(s => mustInclude.push(s));
-  }
-  list = buildList(Math.max(dayTotal, kept.length), kept, mustInclude);
-  index = Math.min(index, list.length);
-  rememberPlace();
-  layout();
 }
 
 function rememberPlace() {
@@ -215,7 +174,6 @@ function rememberPlace() {
     feed: feed.generated_at,
     ids: list.map(s => ({ id: s.id, bubble: !!s.bubble })),
     index,
-    total: dayTotal,
   };
   saveState();
 }
@@ -270,20 +228,22 @@ function toast(message) {
 // ---------- one story screen ----------
 
 function renderStory(story) {
+  // Layout "C": a framed photo at the top, the story's text below it, and an
+  // actions row at the bottom. Only the "Read article" button opens the article.
   const screen = el("article", "story");
 
-  let photo;
+  const frame = el("div", "frame");
   if (story.photo) {
-    photo = el("img", "photo");
+    const photo = el("img", "photo");
     photo.src = story.photo;
     photo.alt = "";
     photo.referrerPolicy = "no-referrer";
     photo.draggable = false;
     photo.addEventListener("error", () => photo.replaceWith(placeholder(story)));
+    frame.append(photo);
   } else {
-    photo = placeholder(story);
+    frame.append(placeholder(story));
   }
-  photo.addEventListener("click", () => openArticle(story));
 
   const text = el("div", "text");
 
@@ -322,32 +282,27 @@ function renderStory(story) {
   if (story.photo_credit) creditParts.push("Photo: " + story.photo_credit);
   text.append(el("span", "credit", creditParts.join(" · ")));
 
-  // Right-side rail: Save and Read.
-  const rail = el("div", "rail");
+  // Actions: "Read article" (the only way to open the article) and a Save icon.
+  const actions = el("div", "actions");
+  const read = el("button", "read-button", "Read article");
+  read.type = "button";
+  read.addEventListener("click", () => openArticle(story));
   const isSaved = !!state.saved[story.id];
-  const save = el("button", isSaved ? "is-saved" : "");
+  const save = el("button", "save-button" + (isSaved ? " is-saved" : ""));
   save.type = "button";
   save.setAttribute("aria-pressed", String(isSaved));
   save.setAttribute("aria-label", isSaved ? "Remove from saved" : "Save for later");
   save.innerHTML = isSaved ? ICONS.saveFilled : ICONS.save;
-  save.append(isSaved ? "Saved" : "Save");
   save.addEventListener("click", () => toggleSave(story));
-  const read = el("button");
-  read.type = "button";
-  read.setAttribute("aria-label", "Read the full article");
-  read.innerHTML = ICONS.read;
-  read.append("Read");
-  read.addEventListener("click", () => openArticle(story));
-  rail.append(save, read);
+  actions.append(read, save);
 
-  screen.append(photo, el("div", "fade"), text, rail);
+  screen.append(frame, text, actions);
   return screen;
 }
 
+// No photo: dark grey with the topic name in large letters.
 function placeholder(story) {
-  const box = el("div", "photo none", story.topic);
-  box.addEventListener("click", () => openArticle(story));
-  return box;
+  return el("div", "photo none", story.topic);
 }
 
 function renderEnd() {
@@ -597,8 +552,9 @@ function buildPage() {
   const row = el("div", "row");
   row.append(el("div", "brand", "Signal"));
   const buttons = el("div", "header-buttons");
-  const actions = { deep: openDeep, saved: openSaved, topics: openTopics };
-  for (const [name, label] of [["deep", "Deep Signal"], ["saved", "Saved stories"], ["topics", "Topics"]]) {
+  const actions = { start: backToStart, deep: openDeep, saved: openSaved, topics: openTopics };
+  for (const [name, label] of [["start", "Back to the first story"], ["deep", "Deep Signal"],
+                               ["saved", "Saved stories"], ["topics", "Topics"]]) {
     const button = el("button", "icon-button");
     button.type = "button";
     button.id = name + "-button";
@@ -610,12 +566,7 @@ function buildPage() {
   row.append(buttons);
   const bar = el("div", "bar");
   bar.append(el("div"));
-  // The "Story 12 of 75" counter is a button: tapping it goes back to story 1.
-  const count = el("button", "count");
-  count.type = "button";
-  count.setAttribute("aria-label", "Back to the first story");
-  count.addEventListener("click", backToStart);
-  header.append(row, bar, count);
+  header.append(row, bar, el("div", "count"));
 
   const toastBox = el("div", "toast");
   toastBox.id = "toast";
@@ -935,14 +886,15 @@ function openTopics() {
   showSheet(sheet);
 }
 
+// Changing topics, the bubble switch or keywords builds a fresh 75 for your new
+// choices and starts again at story 1 (owner's choice).
 function applyTopicChanges() {
   if (!settingsBefore || settingsBefore === JSON.stringify([state.topics, state.bubble, state.keywords])) return;
-  const before = JSON.parse(settingsBefore)[0];
-  const switchedOn = TOPICS.filter(t => state.topics[t] && !before[t]);
-  rebuildAhead(switchedOn);
-  if (switchedOn.length) {
-    toast(`Added ${EXTRA_PER_ADDED_TOPIC * switchedOn.length} stories from ${switchedOn.join(" and ")}`);
-  }
+  list = buildList(STORIES_PER_DAY);
+  index = 0;
+  rememberPlace();
+  layout();
+  toast("New feed for your topics");
 }
 
 // ---------- a list of stories for one topic or one keyword ----------
