@@ -4,14 +4,16 @@
 # github.io addresses aren't blocked. This repository (public) holds ONLY a copy of
 # the app's public files; the code stays in the private "signal" repository.
 #
-# Every hour it downloads the app and today's feed from the Cloudflare address
-# (GitHub's servers can reach it) and publishes them here. No passwords or tokens.
+# Every 15 minutes it downloads the app and today's feed from the Cloudflare address
+# (GitHub's servers can reach it) and publishes them here if anything changed. The
+# morning job in the private repository also starts it right after a new feed.
+# No passwords or tokens are needed here.
 
 name: Publish Signal
 
 on:
   schedule:
-    - cron: "45 * * * *"     # every hour at minute 45 (the morning feed is ready by ~01:30 UTC)
+    - cron: "*/15 * * * *"   # every 15 minutes (GitHub sometimes skips scheduled runs)
   workflow_dispatch:          # a "Run workflow" button, for testing
 
 permissions:
@@ -53,6 +55,7 @@ jobs:
       # "active": GitHub pauses scheduled jobs in public repositories that see no
       # activity for 60 days.
       - name: Save the copy if it changed
+        id: save
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -62,13 +65,17 @@ jobs:
           else
             git commit -m "Update app copy $(date -u +%F)"
             git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # Publish only when something changed (or when started by hand / by the morning job).
       - name: Prepare for GitHub Pages
+        if: steps.save.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         uses: actions/upload-pages-artifact@v4
         with:
           path: app
 
       - name: Publish on GitHub Pages
+        if: steps.save.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         id: deploy
         uses: actions/deploy-pages@v4
