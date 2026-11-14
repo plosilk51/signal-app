@@ -404,6 +404,11 @@ header .row { display: flex; justify-content: space-between; align-items: center
 .home.splash .greeting { transform: translateY(var(--splash-shift, 30vh)) scale(1.25); }
 .home.splash .g2, .home.splash .greeting .date { transform: translateY(14px); }
 
+/* While the greeting shows, the page behind the app is red: on iPhones the bottom strip
+   behind the home bar is outside the app's area, and would otherwise show a dark gap
+   under the sun. */
+html.splashing, html.splashing body { background: var(--red); }
+
 /* The red sun rises when Signal opens, and sinks as the page appears. */
 .home .sun {
   position: fixed; left: 50%; bottom: -240px;

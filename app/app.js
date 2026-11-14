@@ -1320,6 +1320,9 @@ async function start() {
   const home = buildHome();
   document.getElementById("app").replaceChildren(home);
   placeGreeting(home);
+  // During the splash, the strip at the very bottom of the iPhone screen (behind the
+  // home bar, outside the app's area) turns red, so the sun reaches the bottom edge.
+  document.documentElement.classList.add("splashing");
   const opened = Date.now();
 
   let offline = false;
@@ -1332,6 +1335,7 @@ async function start() {
     home.querySelector(".home-body").replaceChildren(
       el("p", "message", "Couldn't load today's stories. Check your connection and try again."));
     home.classList.remove("splash");
+    document.documentElement.classList.remove("splashing");
     return;
   }
   prepareToday();
@@ -1343,6 +1347,7 @@ async function start() {
   // Keep the greeting on screen for at least 2 seconds, then reveal the home page.
   await new Promise(done => setTimeout(done, Math.max(0, SPLASH_MS - (Date.now() - opened))));
   home.classList.remove("splash");
+  document.documentElement.classList.remove("splashing");
   if (offline) toast("No connection: showing the feed from " + timeAgo(feed.generated_at).toLowerCase());
 }
 
